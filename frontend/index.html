@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Real-Time Translator</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; display: flex; flex-direction: column; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.5rem; border-bottom: 1px solid #2d3748;
+  }
+  header h1 { font-size: 1.1rem; font-weight: 600; }
+  .tier-selector { display: flex; align-items: center; gap: 0.5rem; }
+  .tier-selector select {
+    background: #1a202c; border: 1px solid #4a5568; color: #e2e8f0;
+    padding: 0.3rem 0.6rem; border-radius: 6px; font-size: 0.85rem; cursor: pointer;
+  }
+
+  main { flex: 1; display: flex; flex-direction: column; gap: 1.5rem; padding: 1.5rem; max-width: 800px; width: 100%; margin: 0 auto; }
+
+  .lang-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .lang-col { display: flex; flex-direction: column; gap: 0.75rem; }
+  .lang-col label { font-size: 0.8rem; color: #a0aec0; text-transform: uppercase; letter-spacing: 0.05em; }
+  .lang-col select {
+    background: #1a202c; border: 1px solid #4a5568; color: #e2e8f0;
+    padding: 0.6rem 0.8rem; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
+  }
+
+  .record-btn {
+    background: #2d3748; border: 2px solid #4a5568; color: #e2e8f0;
+    border-radius: 12px; padding: 2rem 1rem; font-size: 1rem; cursor: pointer;
+    transition: all 0.15s; user-select: none; display: flex; flex-direction: column;
+    align-items: center; gap: 0.5rem; -webkit-tap-highlight-color: transparent;
+  }
+  .record-btn:hover { border-color: #63b3ed; }
+  .record-btn.recording { background: #742a2a; border-color: #fc8181; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.7; } }
+  .record-btn .mic-icon { font-size: 2rem; }
+  .record-btn .btn-label { font-size: 0.85rem; color: #a0aec0; }
+
+  .output-box {
+    background: #1a202c; border: 1px solid #2d3748; border-radius: 10px;
+    padding: 1rem 1.25rem; min-height: 5rem; position: relative;
+  }
+  .output-source { color: #a0aec0; font-size: 0.9rem; margin-bottom: 0.5rem; }
+  .output-translation {
+    color: #e2e8f0; font-size: 1rem; display: flex;
+    align-items: flex-start; justify-content: space-between; gap: 1rem;
+  }
+  .replay-btn {
+    background: none; border: none; color: #63b3ed; font-size: 1.1rem;
+    cursor: pointer; flex-shrink: 0; padding: 0.2rem;
+  }
+  .replay-btn:disabled { color: #4a5568; cursor: default; }
+  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid #4a5568; border-top-color: #63b3ed; border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .status-bar {
+    font-size: 0.8rem; color: #718096; display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 0;
+  }
+  .fallback-badge {
+    display: inline-flex; align-items: center; gap: 0.25rem;
+    background: #2d3748; border: 1px solid #4a5568; border-radius: 4px;
+    padding: 0.1rem 0.4rem; cursor: help; font-size: 0.78rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌐 Real-Time Translator</h1>
+  <div class="tier-selector">
+    <span style="font-size:0.8rem;color:#a0aec0">⚙</span>
+    <select id="tierSelect" onchange="setTier(this.value)">
+      <option value="small">Small</option>
+      <option value="medium">Medium</option>
+      <option value="high">High</option>
+    </select>
+  </div>
+</header>
+
+<main>
+  <div class="lang-row">
+    <div class="lang-col">
+      <label>Language A</label>
+      <select id="langA"></select>
+    </div>
+    <div class="lang-col">
+      <label>Language B</label>
+      <select id="langB"></select>
+    </div>
+  </div>
+
+  <div class="lang-row">
+    <div class="lang-col">
+      <button class="record-btn" id="btnA"
+        onmousedown="startRecord('A')" onmouseup="stopRecord('A')"
+        ontouchstart="startRecord('A')" ontouchend="stopRecord('A')">
+        <span class="mic-icon">🎤</span>
+        <span class="btn-label">Hold to speak</span>
+      </button>
+    </div>
+    <div class="lang-col">
+      <button class="record-btn" id="btnB"
+        onmousedown="startRecord('B')" onmouseup="stopRecord('B')"
+        ontouchstart="startRecord('B')" ontouchend="stopRecord('B')">
+        <span class="mic-icon">🎤</span>
+        <span class="btn-label">Hold to speak</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="output-box">
+    <div class="output-source" id="sourceText">—</div>
+    <div class="output-translation">
+      <span id="translationText">—</span>
+      <button class="replay-btn" id="replayBtn" onclick="replayAudio()" disabled title="Replay">🔊</button>
+    </div>
+  </div>
+
+  <div class="status-bar" id="statusBar">
+    <span id="statusText">Ready</span>
+  </div>
+</main>
+
+<audio id="audioPlayer" hidden></audio>
+
+<script>
+const API = '';   // same origin
+let languages = [];
+let currentConfig = 'small';
+let recorder = null;
+let audioChunks = [];
+let lastAudioB64 = null;
+
+// -----------------------------------------------------------------------
+// Init
+// -----------------------------------------------------------------------
+async function init() {
+  await loadStatus();
+  await loadLanguages();
+}
+
+async function loadStatus() {
+  const r = await fetch(`${API}/status`);
+  const d = await r.json();
+  currentConfig = d.config;
+  document.getElementById('tierSelect').value = currentConfig;
+  updateFallbackBadge(d.fallback_active || []);
+}
+
+async function loadLanguages() {
+  const r = await fetch(`${API}/languages`);
+  const d = await r.json();
+  languages = d.languages;
+  populateSelect('langA', 'en');
+  populateSelect('langB', 'fr');
+}
+
+function populateSelect(id, defaultCode) {
+  const sel = document.getElementById(id);
+  sel.innerHTML = '';
+  languages.forEach(l => {
+    const opt = document.createElement('option');
+    opt.value = l.code;
+    opt.textContent = `${l.flag} ${l.name}`;
+    if (l.code === defaultCode) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+// -----------------------------------------------------------------------
+// Tier switching
+// -----------------------------------------------------------------------
+async function setTier(value) {
+  setStatus('Switching tier…');
+  await fetch(`${API}/config`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({config: value}),
+  });
+  currentConfig = value;
+  await pollUntilReady();
+  await loadStatus();
+  setStatus('Ready');
+}
+
+async function pollUntilReady() {
+  for (let i = 0; i < 60; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    try {
+      const r = await fetch(`${API}/health`);
+      const d = await r.json();
+      if (Object.values(d).every(Boolean)) return;
+    } catch {}
+  }
+}
+
+// -----------------------------------------------------------------------
+// Recording
+// -----------------------------------------------------------------------
+async function startRecord(side) {
+  if (recorder) return;
+  const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+  const mimeType = MediaRecorder.isTypeSupported('audio/wav') ? 'audio/wav' : 'audio/webm';
+  recorder = new MediaRecorder(stream, {mimeType});
+  audioChunks = [];
+  recorder.ondataavailable = e => audioChunks.push(e.data);
+  recorder.start();
+
+  const btn = document.getElementById('btn' + side);
+  btn.classList.add('recording');
+  btn.querySelector('.btn-label').textContent = 'Recording…';
+  btn._side = side;
+}
+
+async function stopRecord(side) {
+  if (!recorder) return;
+  recorder.onstop = () => handleAudio(side);
+  recorder.stop();
+  recorder.stream.getTracks().forEach(t => t.stop());
+  recorder = null;
+
+  const btn = document.getElementById('btn' + side);
+  btn.classList.remove('recording');
+  btn.querySelector('.btn-label').textContent = 'Hold to speak';
+}
+
+async function handleAudio(side) {
+  const blob = new Blob(audioChunks);
+  const arrayBuf = await blob.arrayBuffer();
+  const b64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
+
+  const srcLang = document.getElementById('lang' + side).value;
+  const tgtLang = document.getElementById(side === 'A' ? 'langB' : 'langA').value;
+
+  setStatus('<span class="spinner"></span> Transcribing…');
+  document.getElementById('sourceText').textContent = '…';
+  document.getElementById('translationText').textContent = '…';
+  document.getElementById('replayBtn').disabled = true;
+
+  try {
+    // 1. Transcribe
+    const tRes = await fetch(`${API}/transcribe`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({audio: b64, lang: srcLang}),
+    }).then(r => r.json());
+
+    document.getElementById('sourceText').textContent = tRes.text;
+    let fallback = tRes.fallback;
+
+    // 2. Translate
+    setStatus('<span class="spinner"></span> Translating…');
+    const trRes = await fetch(`${API}/translate`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: tRes.text, source: srcLang, target: tgtLang}),
+    }).then(r => r.json());
+
+    document.getElementById('translationText').textContent = trRes.translation;
+
+    // 3. Synthesize
+    setStatus('<span class="spinner"></span> Synthesizing…');
+    const sRes = await fetch(`${API}/synthesize`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({text: trRes.translation, lang: tgtLang}),
+    }).then(r => r.json());
+
+    fallback = fallback || sRes.fallback;
+    lastAudioB64 = sRes.audio;
+    playAudio(sRes.audio);
+    document.getElementById('replayBtn').disabled = false;
+
+    setStatus(fallback ? '🔄 Fallback mode active' : 'Ready', fallback);
+  } catch (e) {
+    setStatus('⚠ Error: ' + e.message);
+  }
+}
+
+// -----------------------------------------------------------------------
+// Audio playback
+// -----------------------------------------------------------------------
+function playAudio(b64) {
+  const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const blob = new Blob([bytes], {type: 'audio/wav'});
+  const url = URL.createObjectURL(blob);
+  const player = document.getElementById('audioPlayer');
+  player.src = url;
+  player.play();
+}
+
+function replayAudio() {
+  if (lastAudioB64) playAudio(lastAudioB64);
+}
+
+// -----------------------------------------------------------------------
+// Status bar
+// -----------------------------------------------------------------------
+function setStatus(html, isFallback = false) {
+  const bar = document.getElementById('statusBar');
+  let content = `<span id="statusText">${html}</span>`;
+  if (isFallback) {
+    content += ` <span class="fallback-badge" title="Vietnamese STT and TTS are handled by Medium-tier models in the High tier configuration.">🔄 Fallback</span>`;
+  }
+  bar.innerHTML = content;
+}
+
+function updateFallbackBadge(fallbackActive) {
+  if (fallbackActive.length > 0) {
+    setStatus('Ready', true);
+  }
+}
+
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# AMD ROCm: install torch first:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/rocm6.1
+# AMD ROCm: install llama-cpp-python with:
+# CMAKE_ARGS="-DGGML_HIPBLAS=on" pip install llama-cpp-python
+# Then install vLLM with ROCm support per: https://docs.vllm.ai/en/latest/getting_started/amd-installation.html
+
+fastapi>=0.110.0
+uvicorn>=0.27.0
+python-multipart>=0.0.9
+transformers>=5.2.0
+torch>=2.1.0
+torchaudio>=2.1.0
+faster-whisper>=1.1.0
+llama-cpp-python>=0.2.90
+huggingface_hub>=0.21.0
+httpx>=0.26.0
+sherpa-onnx>=1.10.0
+pydub>=0.25.1
+soundfile>=0.12.1
+numpy>=1.26.0
+pytest>=7.4.0
+pytest-asyncio>=0.23.0

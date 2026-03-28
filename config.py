@@ -1,0 +1,179 @@
+# config.py
+from typing import Optional
+
+LANGUAGES = [
+    {"code": "en", "name": "English",    "flag": "🇬🇧", "voxtral_stt": True,  "voxtral_tts": True},
+    {"code": "zh", "name": "Chinese",    "flag": "🇨🇳", "voxtral_stt": True,  "voxtral_tts": True},
+    {"code": "fr", "name": "French",     "flag": "🇫🇷", "voxtral_stt": True,  "voxtral_tts": True},
+    {"code": "de", "name": "German",     "flag": "🇩🇪", "voxtral_stt": True,  "voxtral_tts": True},
+    {"code": "es", "name": "Spanish",    "flag": "🇪🇸", "voxtral_stt": True,  "voxtral_tts": True},
+    {"code": "it", "name": "Italian",    "flag": "🇮🇹", "voxtral_stt": True,  "voxtral_tts": True},
+    {"code": "pt", "name": "Portuguese", "flag": "🇵🇹", "voxtral_stt": True,  "voxtral_tts": True},
+    {"code": "nl", "name": "Dutch",      "flag": "🇳🇱", "voxtral_stt": True,  "voxtral_tts": True},
+    {"code": "hi", "name": "Hindi",      "flag": "🇮🇳", "voxtral_stt": True,  "voxtral_tts": True},
+    {"code": "ar", "name": "Arabic",     "flag": "🇸🇦", "voxtral_stt": True,  "voxtral_tts": True},
+    {"code": "vi", "name": "Vietnamese", "flag": "🇻🇳", "voxtral_stt": False, "voxtral_tts": False},
+]
+
+# Languages natively supported by Voxtral (STT and TTS)
+VOXTRAL_LANGS = {l["code"] for l in LANGUAGES if l["voxtral_stt"]}
+
+# Voxtral TTS voice per language (preset voices from Voxtral-4B-TTS-2603)
+VOXTRAL_TTS_VOICES: dict[str, str] = {
+    "en": "casual_male",
+    "fr": "Angele",
+    "de": "casual_male",
+    "es": "Gustavo",
+    "it": "casual_male",
+    "pt": "Gustavo",
+    "nl": "casual_male",
+    "hi": "Sanchit",
+    "ar": "casual_male",
+    "zh": "casual_male",
+}
+
+# Kokoro-82M voice per language (Medium tier EN/ZH/FR; others fall back to Piper)
+KOKORO_VOICES: dict[str, Optional[str]] = {
+    "en": "af_heart",
+    "zh": "zf_xiaobei",
+    "fr": "ff_siwis",
+    "de": None,
+    "es": "ef_dora",
+    "it": "if_sara",
+    "pt": "pf_dora",
+    "nl": None,
+    "hi": "hf_alpha",
+    "ar": None,
+    "vi": None,
+}
+
+# Piper sherpa-onnx model download info (used for VI in all tiers, and all langs in Small)
+PIPER_MODELS: dict[str, dict] = {
+    "vi": {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-vi_VN-vivos-x_low.tar.bz2",
+        "dir": "vits-piper-vi_VN-vivos-x_low",
+        "model": "vi_VN-vivos-x_low.onnx",
+        "tokens": "tokens.txt",
+        "espeak_lang": "vi",
+    },
+    "en": {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2",
+        "dir": "vits-piper-en_US-lessac-medium",
+        "model": "en_US-lessac-medium.onnx",
+        "tokens": "tokens.txt",
+        "espeak_lang": "en-us",
+    },
+    "fr": {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-fr_FR-mls-medium.tar.bz2",
+        "dir": "vits-piper-fr_FR-mls-medium",
+        "model": "fr_FR-mls-medium.onnx",
+        "tokens": "tokens.txt",
+        "espeak_lang": "fr",
+    },
+    "zh": {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-melo-tts-zh_en.tar.bz2",
+        "dir": "vits-melo-tts-zh_en",
+        "model": "model.onnx",
+        "tokens": "tokens.txt",
+        "espeak_lang": "zh",
+    },
+    "de": {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-mls-medium.tar.bz2",
+        "dir": "vits-piper-de_DE-mls-medium",
+        "model": "de_DE-mls-medium.onnx",
+        "tokens": "tokens.txt",
+        "espeak_lang": "de",
+    },
+    "es": {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-es_ES-mls_10246-medium.tar.bz2",
+        "dir": "vits-piper-es_ES-mls_10246-medium",
+        "model": "es_ES-mls_10246-medium.onnx",
+        "tokens": "tokens.txt",
+        "espeak_lang": "es",
+    },
+    "it": {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-it_IT-riccardo-x_low.tar.bz2",
+        "dir": "vits-piper-it_IT-riccardo-x_low",
+        "model": "it_IT-riccardo-x_low.onnx",
+        "tokens": "tokens.txt",
+        "espeak_lang": "it",
+    },
+    "pt": {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-pt_BR-faber-medium.tar.bz2",
+        "dir": "vits-piper-pt_BR-faber-medium",
+        "model": "pt_BR-faber-medium.onnx",
+        "tokens": "tokens.txt",
+        "espeak_lang": "pt",
+    },
+    "nl": {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-nl_NL-mls-medium.tar.bz2",
+        "dir": "vits-piper-nl_NL-mls-medium",
+        "model": "nl_NL-mls-medium.onnx",
+        "tokens": "tokens.txt",
+        "espeak_lang": "nl",
+    },
+    "hi": {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-hi_IN-deep-medium.tar.bz2",
+        "dir": "vits-piper-hi_IN-deep-medium",
+        "model": "hi_IN-deep-medium.onnx",
+        "tokens": "tokens.txt",
+        "espeak_lang": "hi",
+    },
+    "ar": {
+        "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-ar_JO-kareem-medium.tar.bz2",
+        "dir": "vits-piper-ar_JO-kareem-medium",
+        "model": "ar_JO-kareem-medium.onnx",
+        "tokens": "tokens.txt",
+        "espeak_lang": "ar",
+    },
+}
+
+# Helsinki-NLP OPUS-MT model IDs (Small tier translation)
+# Non-EN pairs go through EN as pivot (e.g. zh→fr = zh→en→fr)
+OPUS_MT_MODELS: dict[tuple[str, str], str] = {
+    ("en", "zh"): "Helsinki-NLP/opus-mt-en-zh",
+    ("zh", "en"): "Helsinki-NLP/opus-mt-zh-en",
+    ("en", "fr"): "Helsinki-NLP/opus-mt-tc-big-en-fr",
+    ("fr", "en"): "Helsinki-NLP/opus-mt-tc-big-fr-en",
+    ("en", "de"): "Helsinki-NLP/opus-mt-en-de",
+    ("de", "en"): "Helsinki-NLP/opus-mt-de-en",
+    ("en", "es"): "Helsinki-NLP/opus-mt-en-es",
+    ("es", "en"): "Helsinki-NLP/opus-mt-es-en",
+    ("en", "it"): "Helsinki-NLP/opus-mt-en-it",
+    ("it", "en"): "Helsinki-NLP/opus-mt-it-en",
+    ("en", "pt"): "Helsinki-NLP/opus-mt-en-pt",
+    ("pt", "en"): "Helsinki-NLP/opus-mt-pt-en",
+    ("en", "nl"): "Helsinki-NLP/opus-mt-en-nl",
+    ("nl", "en"): "Helsinki-NLP/opus-mt-nl-en",
+    ("en", "hi"): "Helsinki-NLP/opus-mt-en-hi",
+    ("hi", "en"): "Helsinki-NLP/opus-mt-hi-en",
+    ("en", "ar"): "Helsinki-NLP/opus-mt-en-ar",
+    ("ar", "en"): "Helsinki-NLP/opus-mt-ar-en",
+    ("en", "vi"): "Helsinki-NLP/opus-mt-en-vi",
+    ("vi", "en"): "Helsinki-NLP/opus-mt-vi-en",
+}
+
+TIER_CONFIGS: dict[str, dict] = {
+    "high": {
+        "stt_model": "mistralai/Voxtral-Mini-4B-Realtime-2602",
+        "stt_fallback_model": "large-v3-turbo",
+        "translation_model_repo": "tencent/HY-MT1.5-7B-GGUF",
+        "translation_model_file": "HY-MT1.5-7B-Q4_K_M.gguf",
+        "tts_vllm_url": "http://localhost:8000",
+        "tts_vllm_model": "mistralai/Voxtral-4B-TTS-2603",
+    },
+    "medium": {
+        "stt_model": "large-v3-turbo",
+        "translation_model_repo": "tencent/HY-MT1.5-1.8B-GGUF",
+        "translation_model_file": "HY-MT1.5-1.8B-Q4_K_M.gguf",
+        "tts_kokoro_model": "NeuML/kokoro-int8-onnx",
+    },
+    "small": {
+        "stt_model": "small",
+        "translation_model": "opus-mt",
+        "tts_model": "piper",
+    },
+}
+
+# Directory where downloaded models/voices are cached
+MODELS_CACHE_DIR = "models_cache"

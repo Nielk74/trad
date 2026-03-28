@@ -1,0 +1,169 @@
+# models/tts.py
+from __future__ import annotations
+import io
+import logging
+import os
+import tarfile
+import urllib.request
+import numpy as np
+import soundfile as sf
+from config import (
+    VOXTRAL_LANGS, VOXTRAL_TTS_VOICES, KOKORO_VOICES,
+    PIPER_MODELS, TIER_CONFIGS, MODELS_CACHE_DIR,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class TTSModel:
+    def __init__(self, config: str):
+        self.config = config
+        self._kokoro = None
+        self._piper: dict[str, object] = {}   # lang -> sherpa_onnx.OfflineTts
+        self._loaded = False
+
+    def load(self):
+        if self._loaded:
+            return
+        if self.config == "medium":
+            self._load_kokoro()
+        # Piper loaded lazily per language on first use
+        self._loaded = True
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def synthesize(self, text: str, lang: str) -> tuple[bytes, bool]:
+        """Returns (wav_bytes, is_fallback)."""
+        self.load()
+
+        if self.config == "high":
+            if lang not in VOXTRAL_LANGS:
+                wav = self._synthesize_piper(text, lang)
+                return wav, True
+            return self._synthesize_vllm(text, lang), False
+
+        if self.config == "medium":
+            voice = KOKORO_VOICES.get(lang)
+            if voice:
+                return self._synthesize_kokoro(text, lang, voice), False
+            return self._synthesize_piper(text, lang), False
+
+        # small — always piper
+        return self._synthesize_piper(text, lang), False
+
+    def is_loaded(self) -> bool:
+        return self._loaded
+
+    # ------------------------------------------------------------------
+    # Kokoro-82M (Medium tier)
+    # ------------------------------------------------------------------
+
+    def _load_kokoro(self):
+        from kokoro_onnx import Kokoro
+        from huggingface_hub import snapshot_download
+        model_dir = snapshot_download(
+            repo_id="NeuML/kokoro-int8-onnx",
+            cache_dir=MODELS_CACHE_DIR,
+        )
+        onnx_path = os.path.join(model_dir, "kokoro-int8.onnx")
+        voices_path = os.path.join(model_dir, "voices.bin")
+        logger.info("Loading Kokoro-82M from %s", model_dir)
+        self._kokoro = Kokoro(onnx_path, voices_path)
+
+    def _synthesize_kokoro(self, text: str, lang: str, voice: str) -> bytes:
+        lang_map = {
+            "en": "en-us", "zh": "zh", "fr": "fr-fr",
+            "es": "es", "it": "it", "pt": "pt-br",
+            "hi": "hi", "ar": "ar",
+        }
+        kokoro_lang = lang_map.get(lang, "en-us")
+        samples, sr = self._kokoro.create(text, voice=voice, speed=1.0, lang=kokoro_lang)
+        return self._to_wav_bytes(np.array(samples), sr)
+
+    # ------------------------------------------------------------------
+    # Piper via sherpa-onnx (Small tier + VI fallback)
+    # ------------------------------------------------------------------
+
+    def _get_piper(self, lang: str):
+        if lang not in self._piper:
+            self._piper[lang] = self._load_piper(lang)
+        return self._piper[lang]
+
+    def _load_piper(self, lang: str):
+        import sherpa_onnx
+        info = PIPER_MODELS.get(lang)
+        if info is None:
+            raise ValueError(f"No Piper model configured for language '{lang}'")
+
+        model_dir = self._download_piper_model(lang, info)
+        model_path = os.path.join(model_dir, info["model"])
+        tokens_path = os.path.join(model_dir, info["tokens"])
+        data_dir = sherpa_onnx.get_default_data_dir()
+
+        config = sherpa_onnx.OfflineTtsConfig(
+            model=sherpa_onnx.OfflineTtsModelConfig(
+                vits=sherpa_onnx.OfflineTtsVitsModelConfig(
+                    model=model_path,
+                    lexicon="",
+                    tokens=tokens_path,
+                    data_dir=data_dir,
+                ),
+                provider="cpu",
+                num_threads=2,
+            ),
+        )
+        logger.info("Loading Piper TTS for lang=%s", lang)
+        return sherpa_onnx.OfflineTts(config)
+
+    def _download_piper_model(self, lang: str, info: dict) -> str:
+        cache_dir = os.path.join(MODELS_CACHE_DIR, "piper")
+        os.makedirs(cache_dir, exist_ok=True)
+        model_dir = os.path.join(cache_dir, info["dir"])
+        if os.path.isdir(model_dir):
+            return model_dir
+        archive_path = os.path.join(cache_dir, info["dir"] + ".tar.bz2")
+        if not os.path.exists(archive_path):
+            logger.info("Downloading Piper model for %s from %s", lang, info["url"])
+            urllib.request.urlretrieve(info["url"], archive_path)
+        with tarfile.open(archive_path, "r:bz2") as tar:
+            tar.extractall(cache_dir)
+        return model_dir
+
+    def _synthesize_piper(self, text: str, lang: str) -> bytes:
+        tts = self._get_piper(lang)
+        audio = tts.generate(text, sid=0, speed=1.0)
+        return self._to_wav_bytes(np.array(audio.samples), audio.sample_rate)
+
+    # ------------------------------------------------------------------
+    # Voxtral-TTS via vLLM HTTP (High tier)
+    # ------------------------------------------------------------------
+
+    def _synthesize_vllm(self, text: str, lang: str) -> bytes:
+        import httpx
+        cfg = TIER_CONFIGS["high"]
+        voice = VOXTRAL_TTS_VOICES.get(lang, "casual_male")
+        payload = {
+            "input": text,
+            "model": cfg["tts_vllm_model"],
+            "response_format": "wav",
+            "voice": voice,
+        }
+        resp = httpx.post(
+            f"{cfg['tts_vllm_url']}/v1/audio/speech",
+            json=payload,
+            timeout=120.0,
+        )
+        resp.raise_for_status()
+        return resp.content
+
+    # ------------------------------------------------------------------
+    # Utility
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _to_wav_bytes(samples: np.ndarray, sample_rate: int) -> bytes:
+        buf = io.BytesIO()
+        sf.write(buf, samples, sample_rate, format="WAV", subtype="PCM_16")
+        return buf.getvalue()

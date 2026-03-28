@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Models cache
+~/.cache/huggingface/
+models_cache/
+*.gguf
+*.onnx
+*.bin
+
+# Test fixtures (downloaded at test time)
+tests/fixtures/audio/*.wav
+tests/fixtures/audio/*.flac
+tests/fixtures/audio/*.mp3
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
