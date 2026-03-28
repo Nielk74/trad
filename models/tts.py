@@ -67,7 +67,11 @@ class TTSModel:
             repo_id="NeuML/kokoro-int8-onnx",
             cache_dir=MODELS_CACHE_DIR,
         )
-        onnx_path = os.path.join(model_dir, "kokoro-int8.onnx")
+        onnx_path = next(
+            (os.path.join(model_dir, f) for f in ("kokoro-int8.onnx", "model.onnx")
+             if os.path.exists(os.path.join(model_dir, f))),
+            os.path.join(model_dir, "kokoro-int8.onnx"),
+        )
         voices_path = os.path.join(model_dir, "voices.bin")
         logger.info("Loading Kokoro-82M from %s", model_dir)
         self._kokoro = Kokoro(onnx_path, voices_path)

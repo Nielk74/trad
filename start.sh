@@ -3,7 +3,7 @@ set -e
 
 CONFIG=${1:-small}
 HOST=${2:-0.0.0.0}
-PORT=${3:-8080}
+PORT=${3:-3003}
 
 VLLM_PID=""
 
@@ -31,4 +31,5 @@ if [ "$CONFIG" = "high" ]; then
 fi
 
 echo "Starting FastAPI (config=$CONFIG, port=$PORT)..."
-python app.py --config "$CONFIG" --host "$HOST" --port "$PORT"
+PYTHON=${PYTHON:-.venv/bin/python}
+"$PYTHON" app.py --config "$CONFIG" --host "$HOST" --port "$PORT"

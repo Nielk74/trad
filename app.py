@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", choices=["high", "medium", "small"], default="small")
 parser.add_argument("--host", default="0.0.0.0")
-parser.add_argument("--port", type=int, default=8080)
+parser.add_argument("--port", type=int, default=3003)
 args, _ = parser.parse_known_args()
 
 CURRENT_CONFIG = {"value": args.config}
@@ -174,4 +174,7 @@ def index():
 # -----------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host=args.host, port=args.port)
+    import os
+    ssl_keyfile = "key.pem" if os.path.exists("key.pem") else None
+    ssl_certfile = "cert.pem" if os.path.exists("cert.pem") else None
+    uvicorn.run(app, host=args.host, port=args.port, ssl_keyfile=ssl_keyfile, ssl_certfile=ssl_certfile)

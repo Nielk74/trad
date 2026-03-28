@@ -17,6 +17,9 @@ tests/fixtures/audio/*.wav
 tests/fixtures/audio/*.flac
 tests/fixtures/audio/*.mp3
 
+# TLS certificates (self-signed, generated locally)
+*.pem
+
 # IDE
 .idea/
 .vscode/
