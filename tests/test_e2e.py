@@ -165,3 +165,75 @@ def test_fallback_indicator_in_status(config):
     if config == "high":
         assert "vi_stt" in data["fallback_active"]
         assert "vi_tts" in data["fallback_active"]
+
+
+# -----------------------------------------------------------------------
+# Voice cloning pipeline tests
+# -----------------------------------------------------------------------
+
+def test_voice_clone_full_pipeline(stt_model, translation_model, tts_model, config, reference_audio_wav):
+    """French audio -> transcript -> English -> synthesize with voice cloning.
+
+    Covers the exact failure path that was found: ref_audio as bytes (not base64 string),
+    ref_text passed through from STT, and the result being a decodable WAV.
+    """
+    from config import VOICE_CLONE_CONFIGS
+    supported = VOICE_CLONE_CONFIGS[config]["supported_langs"]
+    if "en" not in supported:
+        pytest.skip(f"English not supported for voice cloning on tier={config}")
+
+    wav = load_wav_bytes("fr")
+    text, _ = stt_model.transcribe(wav, lang="fr")
+    assert len(text) > 0
+
+    translation = translation_model.translate(text, source="fr", target="en")
+    assert len(translation) > 0
+
+    # reference_audio must be bytes, reference_text is the STT transcript of the speaker
+    audio_bytes, is_fallback = tts_model.synthesize(
+        translation,
+        lang="en",
+        reference_audio=reference_audio_wav,
+        reference_text=text,
+    )
+    assert isinstance(audio_bytes, bytes) and len(audio_bytes) > 100
+    arr, sr = sf.read(io.BytesIO(audio_bytes))
+    assert len(arr) / sr > 0.3
+    assert is_fallback is False
+
+
+def test_voice_clone_synthesize_without_ref_text(tts_model, config, reference_audio_wav):
+    """Cloning without a transcript (x_vector_only_mode) must not raise and must return audio."""
+    from config import VOICE_CLONE_CONFIGS
+    supported = VOICE_CLONE_CONFIGS[config]["supported_langs"]
+    if "en" not in supported:
+        pytest.skip(f"English not supported for voice cloning on tier={config}")
+
+    audio_bytes, _ = tts_model.synthesize(
+        "Hello world",
+        lang="en",
+        reference_audio=reference_audio_wav,
+        reference_text=None,
+    )
+    assert isinstance(audio_bytes, bytes) and len(audio_bytes) > 100
+    arr, sr = sf.read(io.BytesIO(audio_bytes))
+    assert len(arr) / sr > 0.3
+
+
+def test_voice_clone_unsupported_lang_no_crash(tts_model, config, reference_audio_wav):
+    """Passing reference_audio for a language unsupported by the clone model must silently
+    fall back to standard TTS and return valid audio — not crash or return empty bytes."""
+    from config import VOICE_CLONE_CONFIGS
+    supported = VOICE_CLONE_CONFIGS[config]["supported_langs"]
+    if "vi" in supported:
+        pytest.skip("Vietnamese is supported for cloning on this tier")
+
+    audio_bytes, _ = tts_model.synthesize(
+        "Xin chào thế giới",
+        lang="vi",
+        reference_audio=reference_audio_wav,
+        reference_text="Xin chào thế giới",
+    )
+    assert isinstance(audio_bytes, bytes) and len(audio_bytes) > 100
+    arr, sr = sf.read(io.BytesIO(audio_bytes))
+    assert len(arr) / sr > 0.3

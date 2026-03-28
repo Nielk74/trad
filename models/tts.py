@@ -39,7 +39,7 @@ class TTSModel:
     # Public API
     # ------------------------------------------------------------------
 
-    def synthesize(self, text: str, lang: str, reference_audio: bytes | None = None) -> tuple[bytes, bool]:
+    def synthesize(self, text: str, lang: str, reference_audio: bytes | None = None, reference_text: str | None = None) -> tuple[bytes, bool]:
         """Returns (wav_bytes, is_fallback).
 
         If reference_audio is provided (raw WAV bytes), attempts voice cloning
@@ -49,7 +49,7 @@ class TTSModel:
         self.load()
 
         if reference_audio is not None:
-            result = self._synthesize_clone(text, lang, reference_audio)
+            result = self._synthesize_clone(text, lang, reference_audio, reference_text)
             if result is not None:
                 return result, False
             # Language not supported by clone model — fall through to standard
@@ -76,7 +76,7 @@ class TTSModel:
     # Voice cloning dispatcher
     # ------------------------------------------------------------------
 
-    def _synthesize_clone(self, text: str, lang: str, reference_audio: bytes) -> bytes | None:
+    def _synthesize_clone(self, text: str, lang: str, reference_audio: bytes, reference_text: str | None = None) -> bytes | None:
         """Try to synthesize with voice cloning. Returns None if unsupported for this lang."""
         clone_cfg = VOICE_CLONE_CONFIGS.get(self.config, {})
         supported = clone_cfg.get("supported_langs", set())
@@ -88,7 +88,7 @@ class TTSModel:
             return self._synthesize_outetts(text, lang, reference_audio)
         else:
             # medium and high both use Qwen3-TTS
-            return self._synthesize_qwen3(text, lang, reference_audio)
+            return self._synthesize_qwen3(text, lang, reference_audio, ref_text=reference_text)
 
     # ------------------------------------------------------------------
     # OuteTTS 0.3 (Small tier voice cloning, CPU)
@@ -146,17 +146,31 @@ class TTSModel:
         )
         logger.info("Loaded Qwen3-TTS from %s on %s", cfg["model"], device)
 
-    def _synthesize_qwen3(self, text: str, lang: str, reference_audio: bytes) -> bytes:
+    def _synthesize_qwen3(self, text: str, lang: str, reference_audio: bytes, ref_text: str | None = None) -> bytes:
         self._load_qwen3_tts()
-        import base64
-        ref_b64 = base64.b64encode(reference_audio).decode()
         lang_name = QWEN3_TTS_LANG_NAMES.get(lang, "English")
-        wavs, sr = self._qwen3_tts.generate_voice_clone(
-            text=text,
-            language=lang_name,
-            ref_audio=ref_b64,
-            ref_text=None,  # no transcript available; model handles it
-        )
+        # Qwen3-TTS requires a file path — write reference audio to a temp file
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(reference_audio)
+            ref_path = f.name
+        try:
+            if ref_text:
+                wavs, sr = self._qwen3_tts.generate_voice_clone(
+                    text=text,
+                    language=lang_name,
+                    ref_audio=ref_path,
+                    ref_text=ref_text,
+                )
+            else:
+                # x_vector_only_mode skips ICL — no transcript needed, lower quality
+                wavs, sr = self._qwen3_tts.generate_voice_clone(
+                    text=text,
+                    language=lang_name,
+                    ref_audio=ref_path,
+                    x_vector_only_mode=True,
+                )
+        finally:
+            os.unlink(ref_path)
         return self._to_wav_bytes(np.array(wavs[0], dtype=np.float32), sr)
 
     # ------------------------------------------------------------------

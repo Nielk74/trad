@@ -292,22 +292,26 @@ async function handleAudio(side) {
 
   try {
     // 1. Transcribe
-    const tRes = await fetch(`${API}/transcribe`, {
+    const tRaw = await fetch(`${API}/transcribe`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({audio: b64, lang: srcLang}),
-    }).then(r => r.json());
+    });
+    const tRes = await tRaw.json();
+    if (!tRaw.ok) throw new Error(`Transcription failed: ${tRes.detail || tRaw.statusText}`);
 
     document.getElementById('sourceText').textContent = tRes.text;
     let fallback = tRes.fallback;
 
     // 2. Translate
     setStatus('<span class="spinner"></span> Translating…');
-    const trRes = await fetch(`${API}/translate`, {
+    const trRaw = await fetch(`${API}/translate`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({text: tRes.text, source: srcLang, target: tgtLang}),
-    }).then(r => r.json());
+    });
+    const trRes = await trRaw.json();
+    if (!trRaw.ok) throw new Error(`Translation failed: ${trRes.detail || trRaw.statusText}`);
 
     document.getElementById('translationText').textContent = trRes.translation;
 
@@ -315,13 +319,19 @@ async function handleAudio(side) {
     const synthLabel = cloneVoice ? 'Synthesizing (cloning voice)…' : 'Synthesizing…';
     setStatus(`<span class="spinner"></span> ${synthLabel}`);
     const synthPayload = {text: trRes.translation, lang: tgtLang};
-    if (cloneVoice) synthPayload.reference_audio = b64;
+    if (cloneVoice) {
+      synthPayload.reference_audio = b64;
+      synthPayload.reference_text = tRes.text;  // transcript of the recorded audio
+    }
 
-    const sRes = await fetch(`${API}/synthesize`, {
+    const sRaw = await fetch(`${API}/synthesize`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(synthPayload),
-    }).then(r => r.json());
+    });
+    const sRes = await sRaw.json();
+    if (!sRaw.ok) throw new Error(`Synthesis failed: ${sRes.detail || sRaw.statusText}`);
+    if (!sRes.audio) throw new Error('Synthesis returned no audio');
 
     fallback = fallback || sRes.fallback;
     lastAudioB64 = sRes.audio;
