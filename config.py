@@ -35,7 +35,7 @@ VOXTRAL_TTS_VOICES: dict[str, str] = {
 # Kokoro-82M voice per language (Medium tier EN/ZH/FR; others fall back to Piper)
 KOKORO_VOICES: dict[str, Optional[str]] = {
     "en": "af_heart",
-    "zh": "zf_xiaobei",
+    "zh": None,  # kokoro-onnx cannot phonemize Chinese; falls back to Piper/MeloTTS
     "fr": "ff_siwis",
     "de": None,
     "es": "ef_dora",

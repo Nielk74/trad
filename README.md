@@ -6,10 +6,14 @@ Three hardware tiers let you run on anything from a Raspberry Pi to a GPU workst
 
 ## Demo
 
-1. Open the web UI at `http://localhost:8080`
-2. Select source and target languages
-3. Press **Record**, speak, release
-4. The transcript and translation appear instantly; synthesized audio plays automatically
+1. Generate a self-signed TLS certificate (required for microphone access):
+   ```bash
+   openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -nodes -subj "/CN=localhost"
+   ```
+2. Open the web UI at `https://localhost:3003` (accept the browser's self-signed cert warning)
+3. Select source and target languages
+4. Hold **Record**, speak, release
+5. The transcript and translation appear instantly; synthesized audio plays automatically
 
 ## Hardware Tiers
 
@@ -54,6 +58,13 @@ All pairs between the 11 languages are supported. Non-English pairs are pivoted 
 ### Prerequisites
 
 - Python 3.10+
+- `ffmpeg` (required for audio decoding):
+  ```bash
+  # Debian/Ubuntu
+  sudo apt install ffmpeg
+  # macOS
+  brew install ffmpeg
+  ```
 - `espeak-ng` (required for Piper TTS phonemization):
   ```bash
   # Debian/Ubuntu
@@ -61,6 +72,11 @@ All pairs between the 11 languages are supported. Non-English pairs are pivoted 
   # macOS
   brew install espeak-ng
   ```
+- A self-signed TLS certificate (required for microphone access in browsers):
+  ```bash
+  openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 3650 -nodes -subj "/CN=localhost"
+  ```
+  The app auto-detects `key.pem` / `cert.pem` in the working directory and serves HTTPS automatically.
 
 ### Install
 
@@ -81,21 +97,29 @@ pip install -r requirements/requirements-high.txt
 
 ```bash
 # Small tier — no GPU needed, ~500 MB models, all 11 languages
-python app.py --config small
+.venv/bin/python app.py --config small
 
 # Medium tier — better quality, ~3 GB models
-python app.py --config medium
+.venv/bin/python app.py --config medium
 
 # High tier — best quality, requires GPU + vLLM running
-python app.py --config high
+.venv/bin/python app.py --config high
 
 # Custom host/port
-python app.py --config small --host 0.0.0.0 --port 8080
+.venv/bin/python app.py --config small --host 0.0.0.0 --port 3003
+```
+
+Or use the convenience script:
+
+```bash
+./start.sh [small|medium|high] [host] [port]
+# e.g.
+./start.sh medium
 ```
 
 Models are downloaded automatically on first use and cached in `models_cache/`.
 
-Open `http://localhost:8080` in your browser.
+Open `https://localhost:3003` in your browser (accept the self-signed certificate warning).
 
 ### High tier setup
 
@@ -131,19 +155,19 @@ python app.py --config high
 
 ```bash
 # Transcribe
-curl -s -X POST http://localhost:8080/transcribe \
+curl -sk -X POST https://localhost:3003/transcribe \
   -H "Content-Type: application/json" \
   -d '{"audio": "<base64-wav>", "lang": "fr"}'
 # → {"text": "Bonjour le monde", "fallback": false}
 
 # Translate
-curl -s -X POST http://localhost:8080/translate \
+curl -sk -X POST https://localhost:3003/translate \
   -H "Content-Type: application/json" \
   -d '{"text": "Bonjour le monde", "source": "fr", "target": "en"}'
 # → {"translation": "Hello world"}
 
 # Synthesize
-curl -s -X POST http://localhost:8080/synthesize \
+curl -sk -X POST https://localhost:3003/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello world", "lang": "en"}'
 # → {"audio": "<base64-wav>", "fallback": false}
@@ -168,6 +192,21 @@ pytest tests/ -v
 
 Expected result: **16 passed, 2 skipped** (the two skipped tests require `--config=high` with vLLM running).
 
+### Playwright browser tests
+
+Requires the app to be running:
+
+```bash
+# Install playwright (once)
+pip install playwright pytest-playwright
+playwright install chromium
+
+# Run
+pytest tests/test_playwright.py -v
+```
+
+48 tests covering page load, API endpoints, language selects, tier switching, mobile touch recording (with mocked MediaRecorder), network request monitoring, accessibility, and error handling.
+
 ## Project Structure
 
 ```
@@ -186,6 +225,7 @@ requirements/
   requirements-high.txt
 tests/
   test_e2e.py           End-to-end pipeline tests
+  test_playwright.py    Browser / UI tests (Playwright)
   test_stt.py           STT unit tests
   test_translation.py   Translation unit tests
   test_tts.py           TTS unit tests
