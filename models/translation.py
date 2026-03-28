@@ -42,30 +42,35 @@ class TranslationModel:
     # Small tier — Helsinki-NLP opus-mt
     # ------------------------------------------------------------------
 
-    def _get_opusmt_pipeline(self, src: str, tgt: str):
+    def _get_opusmt_model(self, src: str, tgt: str):
         key = (src, tgt)
         if key not in self._models:
             model_id = OPUS_MT_MODELS.get(key)
             if model_id is None:
                 raise ValueError(f"No opus-mt model for {src}→{tgt}")
-            from transformers import pipeline
+            from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
             logger.info("Loading opus-mt %s→%s (%s)", src, tgt, model_id)
-            self._models[key] = pipeline("translation", model=model_id)
+            tokenizer = AutoTokenizer.from_pretrained(model_id)
+            model = AutoModelForSeq2SeqLM.from_pretrained(model_id)
+            self._models[key] = (tokenizer, model)
         return self._models[key]
+
+    def _run_opusmt(self, text: str, src: str, tgt: str) -> str:
+        tokenizer, model = self._get_opusmt_model(src, tgt)
+        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512)
+        outputs = model.generate(**inputs, max_length=512)
+        return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
     def _translate_opusmt(self, text: str, source: str, target: str) -> str:
         direct_key = (source, target)
         if direct_key in OPUS_MT_MODELS:
-            pipe = self._get_opusmt_pipeline(source, target)
-            return pipe(text, max_length=512)[0]["translation_text"]
+            return self._run_opusmt(text, source, target)
 
         # Pivot through English
         if source != "en":
-            pipe_to_en = self._get_opusmt_pipeline(source, "en")
-            text = pipe_to_en(text, max_length=512)[0]["translation_text"]
+            text = self._run_opusmt(text, source, "en")
         if target != "en":
-            pipe_from_en = self._get_opusmt_pipeline("en", target)
-            text = pipe_from_en(text, max_length=512)[0]["translation_text"]
+            text = self._run_opusmt(text, "en", target)
         return text
 
     # ------------------------------------------------------------------

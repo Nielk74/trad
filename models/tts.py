@@ -100,14 +100,31 @@ class TTSModel:
         model_dir = self._download_piper_model(lang, info)
         model_path = os.path.join(model_dir, info["model"])
         tokens_path = os.path.join(model_dir, info["tokens"])
-        data_dir = sherpa_onnx.get_default_data_dir()
+
+        # Lexicon and dict_dir for models that use them (e.g. MeloTTS zh)
+        lexicon = ""
+        if info.get("lexicon"):
+            lexicon = os.path.join(model_dir, info["lexicon"])
+        dict_dir = ""
+        if info.get("dict_dir"):
+            dict_dir = os.path.join(model_dir, info["dict_dir"])
+
+        # Locate espeak-ng data directory (needed for phoneme-based VITS models)
+        espeak_data_candidates = [
+            "/usr/lib/x86_64-linux-gnu/espeak-ng-data",
+            "/usr/lib/aarch64-linux-gnu/espeak-ng-data",
+            "/usr/lib/arm-linux-gnueabihf/espeak-ng-data",
+            "/usr/share/espeak-ng-data",
+        ]
+        data_dir = "" if lexicon else next((d for d in espeak_data_candidates if os.path.isdir(d)), "")
 
         config = sherpa_onnx.OfflineTtsConfig(
             model=sherpa_onnx.OfflineTtsModelConfig(
                 vits=sherpa_onnx.OfflineTtsVitsModelConfig(
                     model=model_path,
-                    lexicon="",
+                    lexicon=lexicon,
                     tokens=tokens_path,
+                    dict_dir=dict_dir,
                     data_dir=data_dir,
                 ),
                 provider="cpu",

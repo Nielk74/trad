@@ -157,10 +157,10 @@ def test_fallback_indicator_in_status(config):
     import httpx
     try:
         resp = httpx.get("http://localhost:8080/status", timeout=2.0)
+        resp.raise_for_status()
+        data = resp.json()
     except Exception:
         pytest.skip("App not running — start with: python app.py --config high")
-
-    data = resp.json()
     assert data["config"] == config
     if config == "high":
         assert "vi_stt" in data["fallback_active"]
