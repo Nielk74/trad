@@ -4,12 +4,14 @@ import io
 import logging
 import os
 import tarfile
+import tempfile
 import urllib.request
 import numpy as np
 import soundfile as sf
 from config import (
     VOXTRAL_LANGS, VOXTRAL_TTS_VOICES, KOKORO_VOICES,
     PIPER_MODELS, TIER_CONFIGS, MODELS_CACHE_DIR,
+    VOICE_CLONE_CONFIGS, QWEN3_TTS_LANG_NAMES,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,6 +23,9 @@ class TTSModel:
         self._kokoro = None
         self._piper: dict[str, object] = {}   # lang -> sherpa_onnx.OfflineTts
         self._loaded = False
+        # Voice cloning models (loaded lazily on first clone request)
+        self._outetts = None
+        self._qwen3_tts = None
 
     def load(self):
         if self._loaded:
@@ -34,9 +39,20 @@ class TTSModel:
     # Public API
     # ------------------------------------------------------------------
 
-    def synthesize(self, text: str, lang: str) -> tuple[bytes, bool]:
-        """Returns (wav_bytes, is_fallback)."""
+    def synthesize(self, text: str, lang: str, reference_audio: bytes | None = None) -> tuple[bytes, bool]:
+        """Returns (wav_bytes, is_fallback).
+
+        If reference_audio is provided (raw WAV bytes), attempts voice cloning
+        using the appropriate model for the current tier. Falls back to the
+        standard synthesis if the language is unsupported for cloning.
+        """
         self.load()
+
+        if reference_audio is not None:
+            result = self._synthesize_clone(text, lang, reference_audio)
+            if result is not None:
+                return result, False
+            # Language not supported by clone model — fall through to standard
 
         if self.config == "high":
             if lang not in VOXTRAL_LANGS:
@@ -55,6 +71,93 @@ class TTSModel:
 
     def is_loaded(self) -> bool:
         return self._loaded
+
+    # ------------------------------------------------------------------
+    # Voice cloning dispatcher
+    # ------------------------------------------------------------------
+
+    def _synthesize_clone(self, text: str, lang: str, reference_audio: bytes) -> bytes | None:
+        """Try to synthesize with voice cloning. Returns None if unsupported for this lang."""
+        clone_cfg = VOICE_CLONE_CONFIGS.get(self.config, {})
+        supported = clone_cfg.get("supported_langs", set())
+        if lang not in supported:
+            logger.info("Voice cloning not supported for lang=%s on tier=%s, falling back", lang, self.config)
+            return None
+
+        if self.config == "small":
+            return self._synthesize_outetts(text, lang, reference_audio)
+        else:
+            # medium and high both use Qwen3-TTS
+            return self._synthesize_qwen3(text, lang, reference_audio)
+
+    # ------------------------------------------------------------------
+    # OuteTTS 0.3 (Small tier voice cloning, CPU)
+    # ------------------------------------------------------------------
+
+    def _load_outetts(self):
+        if self._outetts is not None:
+            return
+        import outetts
+        cfg = VOICE_CLONE_CONFIGS["small"]
+        config = outetts.ModelConfig.auto_config(
+            model=outetts.Models.VERSION_0_3_SIZE_1B,
+            backend=outetts.Backend.LLAMACPP,
+            quantization=outetts.LlamaCppQuantization.FP16,
+        )
+        self._outetts = outetts.Interface(config=config)
+        logger.info("Loaded OuteTTS 0.3 (voice cloning, CPU)")
+
+    def _synthesize_outetts(self, text: str, lang: str, reference_audio: bytes) -> bytes:
+        self._load_outetts()
+        import outetts
+        # Write reference audio to a temp file (OuteTTS requires a file path)
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            f.write(reference_audio)
+            ref_path = f.name
+        try:
+            speaker = self._outetts.create_speaker(audio_path=ref_path, transcript=None, whisper_model="turbo")
+            output = self._outetts.generate(
+                config=outetts.GenerationConfig(
+                    text=text,
+                    generation_type=outetts.GenerationType.CHUNKED,
+                    speaker=speaker,
+                    sampler_config=outetts.SamplerConfig(temperature=0.4, repetition_penalty=1.1),
+                )
+            )
+            return self._to_wav_bytes(output.audio, 24000)
+        finally:
+            os.unlink(ref_path)
+
+    # ------------------------------------------------------------------
+    # Qwen3-TTS 1.7B (Medium + High tier voice cloning, GPU)
+    # ------------------------------------------------------------------
+
+    def _load_qwen3_tts(self):
+        if self._qwen3_tts is not None:
+            return
+        import torch
+        from qwen_tts import Qwen3TTSModel
+        cfg = VOICE_CLONE_CONFIGS[self.config]
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._qwen3_tts = Qwen3TTSModel.from_pretrained(
+            cfg["model"],
+            device_map=device,
+            dtype=torch.bfloat16 if device == "cuda" else torch.float32,
+        )
+        logger.info("Loaded Qwen3-TTS from %s on %s", cfg["model"], device)
+
+    def _synthesize_qwen3(self, text: str, lang: str, reference_audio: bytes) -> bytes:
+        self._load_qwen3_tts()
+        import base64
+        ref_b64 = base64.b64encode(reference_audio).decode()
+        lang_name = QWEN3_TTS_LANG_NAMES.get(lang, "English")
+        wavs, sr = self._qwen3_tts.generate_voice_clone(
+            text=text,
+            language=lang_name,
+            ref_audio=ref_b64,
+            ref_text=None,  # no transcript available; model handles it
+        )
+        return self._to_wav_bytes(np.array(wavs[0], dtype=np.float32), sr)
 
     # ------------------------------------------------------------------
     # Kokoro-82M (Medium tier)

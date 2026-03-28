@@ -67,6 +67,15 @@
     background: #2d3748; border: 1px solid #4a5568; border-radius: 4px;
     padding: 0.1rem 0.4rem; cursor: help; font-size: 0.78rem;
   }
+
+  .clone-row {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.6rem 0.9rem; background: #1a202c; border: 1px solid #2d3748;
+    border-radius: 8px; font-size: 0.88rem; color: #a0aec0; cursor: pointer;
+    user-select: none; width: fit-content;
+  }
+  .clone-row input[type=checkbox] { accent-color: #63b3ed; width: 15px; height: 15px; cursor: pointer; }
+  .clone-row.active { border-color: #63b3ed; color: #e2e8f0; }
 </style>
 </head>
 <body>
@@ -114,6 +123,11 @@
     </div>
   </div>
 
+  <label class="clone-row" id="cloneRow">
+    <input type="checkbox" id="cloneVoice" onchange="document.getElementById('cloneRow').classList.toggle('active', this.checked)">
+    🎙 Clone my voice — synthesize in the speaker's voice
+  </label>
+
   <div class="output-box">
     <div class="output-source" id="sourceText">—</div>
     <div class="output-translation">
@@ -138,6 +152,7 @@ let recorderStarting = false;  // true while getUserMedia is pending
 let stopPending = null;        // side to stop once recorder is ready
 let audioChunks = [];
 let lastAudioB64 = null;
+let lastRecordedB64 = null;    // base64 of the most recent recording (used for voice cloning)
 
 // -----------------------------------------------------------------------
 // Init
@@ -264,9 +279,11 @@ async function handleAudio(side) {
     b64 += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   b64 = btoa(b64);
+  lastRecordedB64 = b64;
 
   const srcLang = document.getElementById('lang' + side).value;
   const tgtLang = document.getElementById(side === 'A' ? 'langB' : 'langA').value;
+  const cloneVoice = document.getElementById('cloneVoice').checked;
 
   setStatus('<span class="spinner"></span> Transcribing…');
   document.getElementById('sourceText').textContent = '…';
@@ -294,12 +311,16 @@ async function handleAudio(side) {
 
     document.getElementById('translationText').textContent = trRes.translation;
 
-    // 3. Synthesize
-    setStatus('<span class="spinner"></span> Synthesizing…');
+    // 3. Synthesize (with optional voice cloning)
+    const synthLabel = cloneVoice ? 'Synthesizing (cloning voice)…' : 'Synthesizing…';
+    setStatus(`<span class="spinner"></span> ${synthLabel}`);
+    const synthPayload = {text: trRes.translation, lang: tgtLang};
+    if (cloneVoice) synthPayload.reference_audio = b64;
+
     const sRes = await fetch(`${API}/synthesize`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({text: trRes.translation, lang: tgtLang}),
+      body: JSON.stringify(synthPayload),
     }).then(r => r.json());
 
     fallback = fallback || sRes.fallback;

@@ -14,6 +14,7 @@ Three hardware tiers let you run on anything from a Raspberry Pi to a GPU workst
 3. Select source and target languages
 4. Hold **Record**, speak, release
 5. The transcript and translation appear instantly; synthesized audio plays automatically
+6. Enable **Clone my voice** to hear the translation spoken in your own voice
 
 ## Hardware Tiers
 
@@ -26,6 +27,7 @@ Three hardware tiers let you run on anything from a Raspberry Pi to a GPU workst
 | **STT** | Whisper Small (CPU int8) | Whisper large-v3-turbo (CPU int8) | Voxtral-Mini-4B (GPU fp16) |
 | **Translation** | Helsinki-NLP opus-mt (CPU) | HY-MT1.5-1.8B GGUF (CPU) | HY-MT1.5-7B GGUF (GPU) |
 | **TTS** | Piper via sherpa-onnx (CPU) | Kokoro-82M ONNX (CPU) | Voxtral-4B-TTS via vLLM (GPU) |
+| **Voice cloning** | OuteTTS 0.3 (CPU, llama.cpp) | Qwen3-TTS 1.7B (GPU) | Qwen3-TTS 1.7B (GPU) |
 
 > **High tier** requires a running vLLM instance (see [High tier setup](#high-tier-setup)).
 
@@ -48,6 +50,20 @@ All 11 languages are available in every tier. The difference is *which model* ha
 | Vietnamese | `vi` | Whisper + opus-mt + Piper | Whisper + HY-MT + Piper | Whisper fallback + Piper fallback* |
 
 *Vietnamese is not natively supported by Voxtral. In the high tier, STT falls back to Whisper large-v3-turbo and TTS falls back to Piper. The API response includes `"fallback": true` when this occurs.
+
+### Voice cloning
+
+Enable the **Clone my voice** checkbox in the UI to synthesize the translation in your own voice. The recording you just made is used as the reference sample — no separate upload needed.
+
+| Tier | Model | Released | Languages supported |
+|---|---|---|---|
+| Small | [OuteTTS 0.3](https://github.com/edwko/OuteTTS) (CPU, llama.cpp) | Jan 2025 | en, fr, de, es, zh, ja, ko |
+| Medium | [Qwen3-TTS 1.7B](https://github.com/QwenLM/Qwen3-TTS) (GPU) | Jan 2026 | en, zh, fr, de, es, it, pt, ru, ja, ko |
+| High | [Qwen3-TTS 1.7B](https://github.com/QwenLM/Qwen3-TTS) (GPU) | Jan 2026 | en, zh, fr, de, es, it, pt, ru, ja, ko |
+
+If the target language is not supported by the cloning model (e.g. Vietnamese, Arabic on small tier), synthesis falls back to the standard voice automatically.
+
+Voice cloning models are loaded lazily on first use — the first cloned translation will take longer while the model downloads and initialises.
 
 ### Translation pairs
 
@@ -166,10 +182,16 @@ curl -sk -X POST https://localhost:3003/translate \
   -d '{"text": "Bonjour le monde", "source": "fr", "target": "en"}'
 # → {"translation": "Hello world"}
 
-# Synthesize
+# Synthesize (standard)
 curl -sk -X POST https://localhost:3003/synthesize \
   -H "Content-Type: application/json" \
   -d '{"text": "Hello world", "lang": "en"}'
+# → {"audio": "<base64-wav>", "fallback": false}
+
+# Synthesize with voice cloning (pass reference audio as base64 WAV)
+curl -sk -X POST https://localhost:3003/synthesize \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello world", "lang": "en", "reference_audio": "<base64-wav>"}'
 # → {"audio": "<base64-wav>", "fallback": false}
 ```
 

@@ -62,6 +62,7 @@ class TranslateRequest(BaseModel):
 class SynthesizeRequest(BaseModel):
     text: str
     lang: str
+    reference_audio: str | None = None   # base64-encoded WAV of the speaker's voice (for cloning)
 
 
 class ConfigRequest(BaseModel):
@@ -144,7 +145,8 @@ def translate(req: TranslateRequest):
 @app.post("/synthesize")
 def synthesize(req: SynthesizeRequest):
     try:
-        wav_bytes, is_fallback = tts.synthesize(req.text, req.lang)
+        ref_audio_bytes = base64.b64decode(req.reference_audio) if req.reference_audio else None
+        wav_bytes, is_fallback = tts.synthesize(req.text, req.lang, reference_audio=ref_audio_bytes)
         audio_b64 = base64.b64encode(wav_bytes).decode()
         return {"audio": audio_b64, "fallback": is_fallback}
     except Exception as e:

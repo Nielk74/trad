@@ -179,3 +179,38 @@ TIER_CONFIGS: dict[str, dict] = {
 
 # Directory where downloaded models/voices are cached
 MODELS_CACHE_DIR = "models_cache"
+
+# Voice cloning model configs per tier
+# Small: OuteTTS 0.3 (CPU via llama.cpp, 6 languages)
+# Medium: Qwen3-TTS 1.7B (GPU, 10 languages, Apache 2.0)
+# High: Qwen3-TTS 1.7B (GPU, same model — vLLM Voxtral does not support ref_audio)
+
+VOICE_CLONE_CONFIGS: dict[str, dict] = {
+    "small": {
+        "model": "OuteAI/OuteTTS-0.3-1B",
+        "backend": "llamacpp",  # runs on CPU
+        "supported_langs": {"en", "fr", "de", "es", "zh", "ja", "ko"},
+    },
+    "medium": {
+        "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        "supported_langs": {"en", "zh", "fr", "de", "es", "it", "pt", "ru", "ja", "ko"},
+    },
+    "high": {
+        "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        "supported_langs": {"en", "zh", "fr", "de", "es", "it", "pt", "ru", "ja", "ko"},
+    },
+}
+
+# Language name mapping for Qwen3-TTS (requires full language name)
+QWEN3_TTS_LANG_NAMES: dict[str, str] = {
+    "en": "English",
+    "zh": "Chinese",
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "ja": "Japanese",
+    "ko": "Korean",
+}
