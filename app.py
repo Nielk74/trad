@@ -39,7 +39,8 @@ tts = TTSModel(args.config)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
-    # nothing to clean up — models are cleaned up by GC
+    if tts._clone_proxy:
+        tts._clone_proxy.shutdown()
 
 
 app = FastAPI(lifespan=lifespan)

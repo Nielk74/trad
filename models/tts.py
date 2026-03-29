@@ -1,10 +1,15 @@
 # models/tts.py
 from __future__ import annotations
+import base64
 import io
+import json
 import logging
 import os
+import struct
+import subprocess
 import tarfile
 import tempfile
+import threading
 import urllib.request
 import numpy as np
 import soundfile as sf
@@ -16,6 +21,108 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class CloneWorkerProxy:
+    """Persistent subprocess running workers/clone_worker.py in an isolated venv.
+
+    Communication protocol (stdin/stdout, binary):
+      Request:  4-byte big-endian uint32 length + UTF-8 JSON
+      Response: 4-byte big-endian uint32 length + bytes
+        - b'RIFF...' → WAV audio (success)
+        - b'\\x00...' → UTF-8 JSON error envelope
+        - b''        → ready sentinel (emitted once after model loads)
+    """
+
+    MAX_RESTARTS = 3
+
+    def __init__(self, tier: str) -> None:
+        self.tier = tier
+        self._venv_python = os.path.join(_PROJECT_ROOT, "venvs", f"clone_{tier}", "bin", "python")
+        self._worker_script = os.path.join(_PROJECT_ROOT, "workers", "clone_worker.py")
+        self._proc: subprocess.Popen | None = None
+        self._restart_count = 0
+        self._lock = threading.Lock()
+
+    def _ensure_running(self) -> None:
+        if self._proc is not None and self._proc.poll() is None:
+            return
+        if not os.path.exists(self._venv_python):
+            raise RuntimeError(
+                f"Clone worker venv not found: {self._venv_python}\n"
+                f"Run: python workers/setup_clone_venvs.py --tier {self.tier}"
+            )
+        logger.info("Starting clone worker for tier=%s", self.tier)
+        self._proc = subprocess.Popen(
+            [self._venv_python, self._worker_script, "--model", self.tier],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        threading.Thread(target=self._forward_stderr, daemon=True).start()
+        # Block until the worker sends its 0-length ready sentinel (or an error)
+        sentinel = self._recv_payload()
+        if sentinel:
+            # Non-empty response during startup = error payload
+            err = json.loads(sentinel[1:]) if sentinel[:1] == b"\x00" else {"error": sentinel.decode(errors="replace")}
+            raise RuntimeError(f"Clone worker failed to start: {err.get('error')}\n{err.get('traceback','')}")
+        logger.info("Clone worker ready (tier=%s)", self.tier)
+
+    def _forward_stderr(self) -> None:
+        for line in self._proc.stderr:
+            logger.info("[clone_worker/%s] %s", self.tier, line.decode(errors="replace").rstrip())
+
+    def _send_request(self, payload: bytes) -> None:
+        length = struct.pack(">I", len(payload))
+        self._proc.stdin.write(length + payload)
+        self._proc.stdin.flush()
+
+    def _recv_payload(self) -> bytes:
+        raw = self._proc.stdout.read(4)
+        if len(raw) < 4:
+            raise BrokenPipeError("Clone worker stdout closed unexpectedly")
+        (length,) = struct.unpack(">I", raw)
+        if length == 0:
+            return b""
+        return self._proc.stdout.read(length)
+
+    def synthesize(self, text: str, lang: str, ref_audio: bytes, ref_text: str | None = None) -> bytes:
+        req_payload = json.dumps({
+            "text": text,
+            "lang": lang,
+            "ref_audio_b64": base64.b64encode(ref_audio).decode(),
+            "ref_text": ref_text,
+        }).encode("utf-8")
+
+        with self._lock:
+            for attempt in range(2):
+                try:
+                    self._ensure_running()
+                    self._send_request(req_payload)
+                    response = self._recv_payload()
+                    if response[:4] == b"RIFF":
+                        return response
+                    if response[:1] == b"\x00":
+                        err = json.loads(response[1:])
+                        raise RuntimeError(f"Clone worker error: {err['error']}\n{err.get('traceback', '')}")
+                    raise RuntimeError(f"Unexpected worker response: {response[:16]!r}")
+                except (BrokenPipeError, OSError) as e:
+                    logger.warning("Clone worker (%s) crashed (attempt %d): %s", self.tier, attempt, e)
+                    self._restart_count += 1
+                    self._proc = None
+                    if self._restart_count > self.MAX_RESTARTS or attempt > 0:
+                        raise RuntimeError(f"Clone worker {self.tier} failed after {self._restart_count} restarts") from e
+        raise RuntimeError("Clone worker failed")
+
+    def shutdown(self) -> None:
+        if self._proc and self._proc.poll() is None:
+            try:
+                self._proc.stdin.close()
+                self._proc.wait(timeout=5)
+            except Exception:
+                self._proc.kill()
+
 
 class TTSModel:
     def __init__(self, config: str):
@@ -23,7 +130,9 @@ class TTSModel:
         self._kokoro = None
         self._piper: dict[str, object] = {}   # lang -> sherpa_onnx.OfflineTts
         self._loaded = False
-        # Voice cloning model (loaded lazily on first clone request)
+        # Voice cloning: subprocess proxy (isolated venv) for small tier;
+        # inline Qwen3-TTS for medium/high (already in main venv)
+        self._clone_proxy: CloneWorkerProxy | None = None
         self._qwen3_tts = None
 
     def load(self):
@@ -83,7 +192,19 @@ class TTSModel:
             logger.info("Voice cloning not supported for lang=%s on tier=%s, falling back", lang, self.config)
             return None
 
-        # medium and high both use Qwen3-TTS
+        if self.config == "small":
+            # OuteTTS runs in an isolated venv subprocess to avoid dep conflicts
+            if self._clone_proxy is None:
+                self._clone_proxy = CloneWorkerProxy("small")
+            return self._clone_proxy.synthesize(text, lang, reference_audio, reference_text)
+
+        # medium and high: try isolated venv worker first (avoids transformers pin conflict),
+        # fall back to inline Qwen3-TTS if the venv hasn't been set up
+        medium_venv = os.path.join(_PROJECT_ROOT, "venvs", "clone_medium", "bin", "python")
+        if os.path.exists(medium_venv):
+            if self._clone_proxy is None:
+                self._clone_proxy = CloneWorkerProxy("medium")
+            return self._clone_proxy.synthesize(text, lang, reference_audio, reference_text)
         return self._synthesize_qwen3(text, lang, reference_audio, ref_text=reference_text)
 
     # ------------------------------------------------------------------

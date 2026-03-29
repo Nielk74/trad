@@ -27,7 +27,7 @@ Three hardware tiers let you run on anything from a Raspberry Pi to a GPU workst
 | **STT** | Whisper Small (CPU int8) | Whisper large-v3-turbo (CPU int8) | Voxtral-Mini-4B (GPU fp16) |
 | **Translation** | Helsinki-NLP opus-mt (CPU) | HY-MT1.5-1.8B GGUF (CPU) | HY-MT1.5-7B GGUF (GPU) |
 | **TTS** | Piper via sherpa-onnx (CPU) | Kokoro-82M ONNX (CPU) | Voxtral-4B-TTS via vLLM (GPU) |
-| **Voice cloning** | Not supported (falls back to Piper) | Qwen3-TTS 1.7B (GPU) | Qwen3-TTS 1.7B (GPU) |
+| **Voice cloning** | OuteTTS 0.3-1B (CPU, isolated venv) | Qwen3-TTS 1.7B (GPU, isolated venv) | Qwen3-TTS 1.7B (GPU, isolated venv) |
 
 > **High tier** requires a running vLLM instance (see [High tier setup](#high-tier-setup)).
 
@@ -57,13 +57,24 @@ Enable the **Clone my voice** checkbox in the UI to synthesize the translation i
 
 | Tier | Model | Released | Languages supported |
 |---|---|---|---|
-| Small | Not supported — falls back to standard Piper TTS | — | — |
+| Small | [OuteTTS 0.3-1B](https://github.com/edwko/OuteTTS) (CPU, isolated venv) | 2025 | en, zh, de, fr, ja, ko |
 | Medium | [Qwen3-TTS 1.7B](https://github.com/QwenLM/Qwen3-TTS) (GPU) | Jan 2026 | en, zh, fr, de, es, it, pt, ru, ja, ko |
 | High | [Qwen3-TTS 1.7B](https://github.com/QwenLM/Qwen3-TTS) (GPU) | Jan 2026 | en, zh, fr, de, es, it, pt, ru, ja, ko |
 
 If the target language is not supported by the cloning model (e.g. Vietnamese, Arabic on small tier), synthesis falls back to the standard voice automatically.
 
-Voice cloning models are loaded lazily on first use — the first cloned translation will take longer while the model downloads and initialises.
+Voice cloning models run in **isolated venvs** to avoid dependency conflicts with the main app. Set them up once before use:
+
+```bash
+# Both tiers
+python workers/setup_clone_venvs.py
+
+# Or individually
+python workers/setup_clone_venvs.py --tier small
+python workers/setup_clone_venvs.py --tier medium
+```
+
+Workers launch automatically on the first clone request and stay alive. If a worker venv is not set up, the checkbox falls back to standard TTS silently.
 
 ### Translation pairs
 

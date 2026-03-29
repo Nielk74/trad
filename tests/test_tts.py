@@ -46,11 +46,16 @@ def test_tts_high_vi_triggers_fallback(tts_model, config):
 # Voice cloning tests
 # -----------------------------------------------------------------------
 
-def test_voice_clone_import(config):
-    """Voice cloning dependency imports correctly for the current tier."""
-    if config == "small":
-        pytest.skip("Voice cloning not supported on small tier — no import needed")
-    import qwen_tts  # noqa: F401
+def test_voice_clone_worker_venv_exists(config):
+    """The isolated clone worker venv must exist before voice cloning can work."""
+    import os
+    venv_tier = "small" if config == "small" else "medium"
+    python = os.path.join("venvs", f"clone_{venv_tier}", "bin", "python")
+    if not os.path.exists(python):
+        pytest.skip(
+            f"Clone worker venv not set up for tier={config}. "
+            f"Run: python workers/setup_clone_venvs.py --tier {venv_tier}"
+        )
 
 
 def test_voice_clone_supported_langs_configured(config):

@@ -26,3 +26,6 @@ tests/fixtures/audio/*.mp3
 
 # OS
 .DS_Store
+
+# Isolated clone worker venvs (created by workers/setup_clone_venvs.py)
+venvs/

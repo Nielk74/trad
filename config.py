@@ -181,14 +181,13 @@ TIER_CONFIGS: dict[str, dict] = {
 MODELS_CACHE_DIR = "models_cache"
 
 # Voice cloning model configs per tier
-# Small: not supported — OuteTTS requires torchcodec/CUDA NPP libs not available on CPU-only setups
-# Medium: Qwen3-TTS 1.7B (GPU, 10 languages, Apache 2.0)
-# High: Qwen3-TTS 1.7B (GPU, same model — vLLM Voxtral does not support ref_audio)
+# Small:        OuteTTS 0.3-1B — runs in isolated venv (venvs/clone_small) to avoid dep conflicts
+# Medium/High:  Qwen3-TTS 1.7B — runs in isolated venv (venvs/clone_medium) or inline in main venv
 
 VOICE_CLONE_CONFIGS: dict[str, dict] = {
     "small": {
-        "model": None,
-        "supported_langs": set(),  # not supported — falls back to standard Piper TTS
+        "model": "OuteAI/OuteTTS-0.3-1B",
+        "supported_langs": {"en", "zh", "de", "fr", "ja", "ko"},
     },
     "medium": {
         "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
