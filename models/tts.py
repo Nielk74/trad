@@ -216,6 +216,7 @@ class TTSModel:
             return
         import torch
         from qwen_tts import Qwen3TTSModel
+        torch.set_num_threads(os.cpu_count() or 4)
         cfg = VOICE_CLONE_CONFIGS[self.config]
         device = "cuda" if torch.cuda.is_available() else "cpu"
         self._qwen3_tts = Qwen3TTSModel.from_pretrained(
@@ -225,10 +226,16 @@ class TTSModel:
         )
         logger.info("Loaded Qwen3-TTS from %s on %s", cfg["model"], device)
 
+    @staticmethod
+    def _qwen3_max_tokens(text: str) -> int:
+        """Estimate max_new_tokens from text length: ~12 tokens/word at 12 Hz, +50% headroom."""
+        words = max(len(text.split()), 1)
+        return min(int(words * 12 * 1.5) + 50, 2048)
+
     def _synthesize_qwen3(self, text: str, lang: str, reference_audio: bytes, ref_text: str | None = None) -> bytes:
         self._load_qwen3_tts()
         lang_name = QWEN3_TTS_LANG_NAMES.get(lang, "English")
-        # Qwen3-TTS requires a file path — write reference audio to a temp file
+        max_tokens = self._qwen3_max_tokens(text)
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             f.write(reference_audio)
             ref_path = f.name
@@ -239,14 +246,15 @@ class TTSModel:
                     language=lang_name,
                     ref_audio=ref_path,
                     ref_text=ref_text,
+                    max_new_tokens=max_tokens,
                 )
             else:
-                # x_vector_only_mode skips ICL — no transcript needed, lower quality
                 wavs, sr = self._qwen3_tts.generate_voice_clone(
                     text=text,
                     language=lang_name,
                     ref_audio=ref_path,
                     x_vector_only_mode=True,
+                    max_new_tokens=max_tokens,
                 )
         finally:
             os.unlink(ref_path)

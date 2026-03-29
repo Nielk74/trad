@@ -104,12 +104,21 @@ QWEN3_LANG_NAMES = {
 def load_model_medium():
     import torch
     from qwen_tts import Qwen3TTSModel
+    # Use all available CPU cores
+    torch.set_num_threads(os.cpu_count() or 4)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    return Qwen3TTSModel.from_pretrained(
+    model = Qwen3TTSModel.from_pretrained(
         "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
         device_map=device,
         dtype=torch.bfloat16 if device == "cuda" else torch.float32,
     )
+    return model
+
+
+def _qwen3_max_tokens(text: str) -> int:
+    """Estimate max_new_tokens from text length: ~12 tokens/word at 12 Hz, +50% headroom."""
+    words = max(len(text.split()), 1)
+    return min(int(words * 12 * 1.5) + 50, 2048)
 
 
 def synthesize_medium(model, text: str, lang: str, ref_audio_bytes: bytes, ref_text: str | None) -> bytes:
@@ -117,6 +126,7 @@ def synthesize_medium(model, text: str, lang: str, ref_audio_bytes: bytes, ref_t
     import soundfile as sf
 
     lang_name = QWEN3_LANG_NAMES.get(lang, "English")
+    max_tokens = _qwen3_max_tokens(text)
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(ref_audio_bytes)
         ref_path = f.name
@@ -124,10 +134,12 @@ def synthesize_medium(model, text: str, lang: str, ref_audio_bytes: bytes, ref_t
         if ref_text:
             wavs, sr = model.generate_voice_clone(
                 text=text, language=lang_name, ref_audio=ref_path, ref_text=ref_text,
+                max_new_tokens=max_tokens,
             )
         else:
             wavs, sr = model.generate_voice_clone(
                 text=text, language=lang_name, ref_audio=ref_path, x_vector_only_mode=True,
+                max_new_tokens=max_tokens,
             )
     finally:
         os.unlink(ref_path)
