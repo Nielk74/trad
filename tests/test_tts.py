@@ -49,9 +49,8 @@ def test_tts_high_vi_triggers_fallback(tts_model, config):
 def test_voice_clone_import(config):
     """Voice cloning dependency imports correctly for the current tier."""
     if config == "small":
-        import outetts  # noqa: F401
-    else:
-        import qwen_tts  # noqa: F401
+        pytest.skip("Voice cloning not supported on small tier — no import needed")
+    import qwen_tts  # noqa: F401
 
 
 def test_voice_clone_supported_langs_configured(config):

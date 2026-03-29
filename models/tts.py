@@ -23,8 +23,7 @@ class TTSModel:
         self._kokoro = None
         self._piper: dict[str, object] = {}   # lang -> sherpa_onnx.OfflineTts
         self._loaded = False
-        # Voice cloning models (loaded lazily on first clone request)
-        self._outetts = None
+        # Voice cloning model (loaded lazily on first clone request)
         self._qwen3_tts = None
 
     def load(self):
@@ -84,49 +83,8 @@ class TTSModel:
             logger.info("Voice cloning not supported for lang=%s on tier=%s, falling back", lang, self.config)
             return None
 
-        if self.config == "small":
-            return self._synthesize_outetts(text, lang, reference_audio)
-        else:
-            # medium and high both use Qwen3-TTS
-            return self._synthesize_qwen3(text, lang, reference_audio, ref_text=reference_text)
-
-    # ------------------------------------------------------------------
-    # OuteTTS 0.3 (Small tier voice cloning, CPU)
-    # ------------------------------------------------------------------
-
-    def _load_outetts(self):
-        if self._outetts is not None:
-            return
-        import outetts
-        cfg = VOICE_CLONE_CONFIGS["small"]
-        config = outetts.ModelConfig.auto_config(
-            model=outetts.Models.VERSION_0_3_SIZE_1B,
-            backend=outetts.Backend.LLAMACPP,
-            quantization=outetts.LlamaCppQuantization.FP16,
-        )
-        self._outetts = outetts.Interface(config=config)
-        logger.info("Loaded OuteTTS 0.3 (voice cloning, CPU)")
-
-    def _synthesize_outetts(self, text: str, lang: str, reference_audio: bytes) -> bytes:
-        self._load_outetts()
-        import outetts
-        # Write reference audio to a temp file (OuteTTS requires a file path)
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            f.write(reference_audio)
-            ref_path = f.name
-        try:
-            speaker = self._outetts.create_speaker(audio_path=ref_path, transcript=None, whisper_model="turbo")
-            output = self._outetts.generate(
-                config=outetts.GenerationConfig(
-                    text=text,
-                    generation_type=outetts.GenerationType.CHUNKED,
-                    speaker=speaker,
-                    sampler_config=outetts.SamplerConfig(temperature=0.4, repetition_penalty=1.1),
-                )
-            )
-            return self._to_wav_bytes(output.audio, 24000)
-        finally:
-            os.unlink(ref_path)
+        # medium and high both use Qwen3-TTS
+        return self._synthesize_qwen3(text, lang, reference_audio, ref_text=reference_text)
 
     # ------------------------------------------------------------------
     # Qwen3-TTS 1.7B (Medium + High tier voice cloning, GPU)
