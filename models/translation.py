@@ -113,4 +113,10 @@ class TranslationModel:
         )
         llm = self._models["gguf"]
         output = llm(prompt, max_tokens=512, stop=["<|im_end|>"], echo=False)
-        return output["choices"][0]["text"].strip()
+        text = output["choices"][0]["text"].strip()
+        # Model occasionally emits a malformed stop token variant — strip it
+        for suffix in ("<|im_end|>", "<|im_end", "<|im_end|"):
+            if text.endswith(suffix):
+                text = text[: -len(suffix)].strip()
+                break
+        return text
