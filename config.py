@@ -186,8 +186,8 @@ MODELS_CACHE_DIR = "models_cache"
 
 VOICE_CLONE_CONFIGS: dict[str, dict] = {
     "small": {
-        "model": "OuteAI/OuteTTS-0.3-1B",
-        "supported_langs": {"en", "zh", "de", "fr", "ja", "ko"},
+        "model": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        "supported_langs": {"en", "zh", "fr", "de", "es", "it", "pt", "ru", "ja", "ko"},
     },
     "medium": {
         "model": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",

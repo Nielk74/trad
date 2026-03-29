@@ -44,55 +44,12 @@ def write_error(buf: "io.RawIOBase", message: str, tb: str = "") -> None:
     write_payload(buf, b"\x00" + body)
 
 
-# ── Model: small (OuteTTS 0.3-1B via outetts 0.3.x API) ─────────────────────
+# ── Model: Qwen3-TTS (small=0.6B, medium/high=1.7B) ─────────────────────────
 
-def load_model_small():
-    import outetts
-    cfg = outetts.HFModelConfig_v2(
-        model_path="OuteAI/OuteTTS-0.3-1B",
-        tokenizer_path="OuteAI/OuteTTS-0.3-1B",
-        verbose=False,
-    )
-    return outetts.InterfaceHF("0.3", cfg)
-
-
-def synthesize_small(model, text: str, lang: str, ref_audio_bytes: bytes, ref_text: str | None) -> bytes:
-    import outetts
-    import soundfile as sf
-    import numpy as np
-
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        f.write(ref_audio_bytes)
-        ref_path = f.name
-    try:
-        speaker = model.create_speaker(
-            audio_path=ref_path,
-            transcript=ref_text or "",
-            whisper_model="turbo",
-        )
-    finally:
-        os.unlink(ref_path)
-
-    output = model.generate(
-        config=outetts.GenerationConfig(
-            text=text,
-            speaker=speaker,
-            temperature=0.1,
-            repetition_penalty=1.1,
-            max_length=4096,
-        )
-    )
-    out_path = tempfile.mktemp(suffix=".wav")
-    try:
-        output.save(out_path)
-        with open(out_path, "rb") as f:
-            return f.read()
-    finally:
-        if os.path.exists(out_path):
-            os.unlink(out_path)
-
-
-# ── Model: medium/high (Qwen3-TTS 1.7B) ─────────────────────────────────────
+QWEN3_MODELS = {
+    "small":  "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+    "medium": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+}
 
 QWEN3_LANG_NAMES = {
     "en": "English", "zh": "Chinese", "fr": "French", "de": "German",
@@ -101,32 +58,30 @@ QWEN3_LANG_NAMES = {
 }
 
 
-def load_model_medium():
+def load_model(tier: str):
     import torch
     from qwen_tts import Qwen3TTSModel
-    # Use all available CPU cores
     torch.set_num_threads(os.cpu_count() or 4)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    model = Qwen3TTSModel.from_pretrained(
-        "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+    return Qwen3TTSModel.from_pretrained(
+        QWEN3_MODELS[tier],
         device_map=device,
         dtype=torch.bfloat16 if device == "cuda" else torch.float32,
     )
-    return model
 
 
-def _qwen3_max_tokens(text: str) -> int:
+def _max_tokens(text: str) -> int:
     """Estimate max_new_tokens from text length: ~12 tokens/word at 12 Hz, +50% headroom."""
     words = max(len(text.split()), 1)
     return min(int(words * 12 * 1.5) + 50, 2048)
 
 
-def synthesize_medium(model, text: str, lang: str, ref_audio_bytes: bytes, ref_text: str | None) -> bytes:
+def synthesize(model, text: str, lang: str, ref_audio_bytes: bytes, ref_text: str | None) -> bytes:
     import numpy as np
     import soundfile as sf
 
     lang_name = QWEN3_LANG_NAMES.get(lang, "English")
-    max_tokens = _qwen3_max_tokens(text)
+    max_tokens = _max_tokens(text)
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(ref_audio_bytes)
         ref_path = f.name
@@ -162,12 +117,7 @@ def main():
     sys.stdout = sys.stderr
 
     try:
-        if args.model == "small":
-            model = load_model_small()
-            synthesize_fn = synthesize_small
-        else:
-            model = load_model_medium()
-            synthesize_fn = synthesize_medium
+        model = load_model(args.model)
     except Exception as e:
         write_error(real_stdout, str(e), traceback.format_exc())
         sys.exit(1)
@@ -183,8 +133,8 @@ def main():
             break
         try:
             ref_audio = base64.b64decode(req["ref_audio_b64"])
-            wav_bytes = synthesize_fn(model, req["text"], req["lang"],
-                                      ref_audio, req.get("ref_text"))
+            wav_bytes = synthesize(model, req["text"], req["lang"],
+                                   ref_audio, req.get("ref_text"))
             write_payload(real_stdout, wav_bytes)
         except Exception as e:
             write_error(real_stdout, str(e), traceback.format_exc())

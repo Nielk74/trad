@@ -18,7 +18,7 @@ VENV_CONFIGS = {
     "small": {
         "venv_dir": os.path.join(PROJECT_ROOT, "venvs", "clone_small"),
         "requirements": os.path.join(PROJECT_ROOT, "requirements", "requirements-clone-small.txt"),
-        "description": "OuteTTS 0.3-1B (CPU, voice cloning for small tier)",
+        "description": "Qwen3-TTS 0.6B (CPU, voice cloning for small tier)",
     },
     "medium": {
         "venv_dir": os.path.join(PROJECT_ROOT, "venvs", "clone_medium"),
